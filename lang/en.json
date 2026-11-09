@@ -1,0 +1,32 @@
+{
+  "SR": {
+    "Title": "Reorder {type}",
+    "OpenButton": "Reorder",
+    "OpenTip": "Rearrange folders and entries in this tab",
+    "Hint": "Drag rows to move them (drop on a folder's middle to put it inside), or use the arrows. Nothing changes until you save.",
+    "ExpandAll": "Expand all folders",
+    "CollapseAll": "Collapse all folders",
+    "SortRoot": "Top level A–Z",
+    "SortRootTip": "Sort the top level alphabetically and keep it sorted",
+    "SortFolderTip": "Sort this folder's contents A–Z and keep it sorted",
+    "ModeAlphaTip": "Sorted alphabetically – new items slot in by name. Moving anything here switches it to manual.",
+    "ModeManual": "manual",
+    "ModeManualTip": "Manual order – items stay where you put them",
+    "Top": "Move to top",
+    "Up": "Move up",
+    "Down": "Move down",
+    "Bottom": "Move to bottom",
+    "Save": "Save",
+    "SaveN": "Save ({n} changed)",
+    "Discard": "Discard",
+    "Undo": "Undo last save",
+    "UndoTip": "Put back the order from before your last save",
+    "Saved": "New order saved.",
+    "Undone": "Previous order restored.",
+    "SaveFailed": "Couldn't save the new order – see the console (F12) for details.",
+    "Stale": "Something in this tab changed elsewhere. Save to apply your order anyway, or Discard to reload.",
+    "ErrorIntoSelf": "A folder can't go inside itself or one of its subfolders.",
+    "ErrorDepth": "That would nest folders deeper than the maximum of {max} levels.",
+    "ErrorType": "There's no sidebar directory for \"{type}\"."
+  }
+}
