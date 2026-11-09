@@ -28,12 +28,15 @@
     "ErrorIntoSelf": "A folder can't go inside itself or one of its subfolders.",
     "ErrorDepth": "That would nest folders deeper than the maximum of {max} levels.",
     "ErrorType": "There's no sidebar directory for \"{type}\".",
-    "SettingDrag": "Better drag & drop in the sidebar",
-    "SettingDragHint": "Shows a line where a dragged folder or entry will land, and lets you reorder anywhere, even in folders sorted A–Z (they switch to manual order). GM only.",
     "KeyUndo": "Undo last reorder",
-    "KeyUndoHint": "Puts back the order from before the last drag or save in the open sidebar tab.",
+    "KeyUndoHint": "Puts back the order from before the last move in the open sidebar tab.",
     "NothingToUndo": "Nothing to undo in this tab.",
     "SettingButton": "Show Reorder button",
-    "SettingButtonHint": "Adds a Reorder button to each sidebar tab that opens a window for moving lots of folders and entries at once."
+    "SettingButtonHint": "Adds a Reorder button to each sidebar tab that opens a window for moving lots of folders and entries at once.",
+    "SettingRows": "Up/down buttons in the sidebar",
+    "SettingRowsHint": "Shows ▲ ▼ buttons and a grip on each folder and entry (GM only). Click to move one step (Shift = to top/bottom), or hold the grip and slide.",
+    "RowUpTip": "Move up (Shift: to top)",
+    "RowDownTip": "Move down (Shift: to bottom)",
+    "GripTip": "Hold and slide up or down"
   }
 }

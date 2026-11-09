@@ -2,17 +2,16 @@
 
 A Foundry VTT module (v13–v14) that gives the GM a window for rearranging folders and entries in any sidebar tab: Scenes, Actors, Items, Journal, Roll Tables, Cards, Playlists and Macros.
 
-## Dragging in the sidebar
+## Up/down controls in the sidebar
 
-With the module on, dragging inside any sidebar tab (as GM) works better than Foundry's default:
+Hover any folder or entry (as GM) and you get three controls on the right:
 
-- An orange line shows exactly where the item will land; a highlighted folder means it goes inside
-- Drop on the top or bottom edge of a folder to reorder folders, on its middle to put something inside
-- Works everywhere, including the top level and folders sorted A–Z (those switch to manual order so your drop sticks)
-- Each drop saves immediately. **Alt+Z** undoes the last one (rebindable under Configure Controls)
-- Turn it off per user under **Module Settings → Better drag & drop in the sidebar**
-
-Dragging items to the canvas, from compendiums, or between tabs works as before.
+- **▲ / ▼** move it one step within its folder. **Shift-click** sends it to the top / bottom
+- **Grip** (≡): hold and slide up or down; an orange line shows where it will land; Esc cancels
+- Works at the top level and inside folders, including folders sorted A–Z (they switch to manual order so the move sticks)
+- Each move saves immediately. **Alt+Z** undoes the last one (rebindable under Configure Controls)
+- To move something into a *different* folder, use Foundry's normal drag & drop
+- Turn off per user under **Module Settings → Up/down buttons in the sidebar**
 
 ## Reorder window (optional)
 
@@ -38,7 +37,7 @@ https://github.com/PsyK2812/foundry-sidebar-reorder/releases/latest/download/mod
 
 ## Usage
 
-As GM, just drag in the sidebar. For the window, enable the button or use the macro below.
+As GM, hover a row in any sidebar tab and use the arrows or the grip. For the window, enable the button or use the macro below.
 From a macro: `game.modules.get("sidebar-reorder").api.open("Scene")` (or `"Actor"`, `"Item"`, `"JournalEntry"`, `"RollTable"`, `"Cards"`, `"Playlist"`, `"Macro"`).
 
 ## License

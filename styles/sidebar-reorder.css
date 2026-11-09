@@ -96,16 +96,55 @@
 /* Sidebar header button */
 .sr-open { flex: 0 0 auto; white-space: nowrap; }
 
-/* In-sidebar drop indicators (pseudo-elements so they sit on top of scene thumbnails) */
-.sr-sidebar-drop-before, .sr-sidebar-drop-after, .sr-sidebar-drop-into, .sr-sidebar-drop-end { position: relative; }
-.sr-sidebar-drop-before::after, .sr-sidebar-drop-after::after, .sr-sidebar-drop-end::after, .sr-sidebar-drop-into::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  z-index: 50;
-  pointer-events: none;
+/* Up/down controls in sidebar rows */
+.sr-host { position: relative; }
+.sr-ctl {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+  margin-left: auto;
+  margin-right: 4px;
+  opacity: 0;
+  transition: opacity 0.1s;
+  z-index: 2;
 }
-.sr-sidebar-drop-before::after { top: -2px; height: 4px; background: var(--color-warm-1, #ee9b3a); }
-.sr-sidebar-drop-after::after, .sr-sidebar-drop-end::after { bottom: -2px; height: 4px; background: var(--color-warm-1, #ee9b3a); }
-.sr-sidebar-drop-into::after { inset: 0; border: 2px solid var(--color-warm-1, #ee9b3a); background: rgba(238, 155, 58, 0.15); }
+.sr-host:hover > .sr-ctl, .sr-sliding .sr-ctl { opacity: 1; }
+/* Entries (incl. scene banners): float over the right side of the row */
+.sr-host-entry > .sr-ctl {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  margin: 0;
+  padding: 2px 3px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.65);
+}
+.sr-ctl-btn, .sr-ctl-grip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 3px;
+  font-size: 12px;
+  color: var(--color-text-light-highlight, #f0f0e0);
+  cursor: pointer;
+}
+.sr-ctl-btn:hover, .sr-ctl-grip:hover { background: rgba(255, 255, 255, 0.15); text-shadow: none; }
+.sr-ctl-grip { cursor: ns-resize; touch-action: none; }
+
+/* While sliding */
+.sr-sliding { position: relative; z-index: 100; opacity: 0.85; pointer-events: none; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.6); }
+.sr-sliding .sr-ctl-grip { pointer-events: auto; }
+#sr-slide-line {
+  display: none;
+  position: fixed;
+  height: 4px;
+  z-index: 10000;
+  pointer-events: none;
+  border-radius: 2px;
+  background: var(--color-warm-1, #ee9b3a);
+  box-shadow: 0 0 4px var(--color-warm-1, #ee9b3a);
+}

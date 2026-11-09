@@ -611,155 +611,219 @@ class SidebarReorder extends ApplicationV2 {
 }
 
 /* -------------------------------------------- */
-/*  Better drag & drop directly in the sidebar  */
+/*  Up/down buttons + grip in the sidebar rows  */
 /* -------------------------------------------- */
 
 /**
- * Takes over drag-and-drop *within* a sidebar directory:
- * - a line shows exactly where the item will land (above / below / inside a folder)
- * - drops always work, even in folders sorted A–Z (they switch to manual order)
- * - folders can be reordered among each other at any level
- * Drags that start elsewhere (compendiums, canvas, other tabs) are left to Foundry.
+ * Adds ▲ ▼ buttons and a grip to every folder and entry row in a sidebar tab.
+ * - ▲ / ▼ move one step within the same folder (Shift = to top / bottom)
+ * - hold the grip and slide up/down to move it anywhere within the same folder
+ * Moving between folders is left to Foundry's normal drag & drop.
  */
-class SidebarDrag {
-  static drag = null;   // { documentName, key, kind }
+class SidebarRows {
+  static ROW_SEL = "[data-folder-id], [data-entry-id], [data-document-id]";
   static busy = false;
+  static slide = null;
 
-  static attach(app, root, documentName) {
-    if (root.dataset.srDrag) return;
-    root.dataset.srDrag = "1";
-    root.addEventListener("dragstart", ev => this.#onDragStart(ev, documentName), true);
-    root.addEventListener("dragover", ev => this.#onDragOver(ev, root, documentName), true);
-    root.addEventListener("dragleave", ev => { if (!root.contains(ev.relatedTarget)) this.#clear(root); }, true);
-    root.addEventListener("drop", ev => this.#onDrop(ev, root, documentName), true);
-    root.addEventListener("dragend", () => { this.drag = null; this.#clear(root); }, true);
+  static #info(li) {
+    if (li.dataset.folderId) return { kind: "folder", key: li.dataset.folderId };
+    const key = li.dataset.entryId ?? li.dataset.documentId;
+    return key ? { kind: "entry", key } : null;
   }
 
-  /**
-   * Find the folder or entry row under an element, without relying on exact class names
-   * (they differ between Foundry versions and themes).
-   */
-  static #findItem(el, root) {
-    const li = el?.closest?.("[data-folder-id], [data-entry-id], [data-document-id], li[data-uuid]");
-    if (!li || !root.contains(li) || li.closest(".directory-header, .header-actions, .directory-footer")) return null;
-    let kind, key;
-    if (li.dataset.folderId) { kind = "folder"; key = li.dataset.folderId; }
-    else if (li.dataset.entryId || li.dataset.documentId) { kind = "entry"; key = li.dataset.entryId ?? li.dataset.documentId; }
-    else {
-      const parsed = foundry.utils.parseUuid?.(li.dataset.uuid);
-      if (!parsed?.id) return null;
-      kind = (parsed.documentType ?? parsed.type) === "Folder" ? "folder" : "entry";
-      key = parsed.id;
-    }
-    return { li, key, kind };
-  }
-
-  /** The clickable header row of a folder (not its contents). */
-  static #folderHeader(li) {
+  static #header(li) {
     return li.querySelector(":scope > header, :scope > .folder-header") ?? li.firstElementChild ?? li;
   }
 
-  static #onDragStart(ev, documentName) {
-    this.drag = null;
-    if (!game.settings.get(MODULE_ID, "sidebarDrag") || !game.user.isGM) return;
-    const root = ev.currentTarget;
-    const info = this.#findItem(ev.target, root);
-    if (info) this.drag = { documentName, key: info.key, kind: info.kind };
-    else console.warn(`${MODULE_ID} | drag start not recognised`, ev.target?.outerHTML?.slice(0, 300));
+  static #rowOf(root, kind, key) {
+    const li = root.querySelector(kind === "folder" ? `[data-folder-id="${key}"]` : `[data-entry-id="${key}"], [data-document-id="${key}"]`);
+    return li ? { li, row: kind === "folder" ? this.#header(li) : li } : null;
   }
 
-  /** Where would a drop at this event land? */
-  static #target(ev, root, model) {
-    const d = this.drag;
-    if (!d || !model.nodes.has(d.key)) return null;
-    const dragged = model.nodes.get(d.key);
-    const info = this.#findItem(ev.target, root);
-
-    // Not over a row: append at the top level (unless over the tab's header).
-    if (!info) {
-      if (!root.contains(ev.target) || ev.target.closest?.(".directory-header, .header-actions")) return null;
-      const p = model.parents.get(ROOT);
-      return { parent: ROOT, index: (d.kind === "folder" ? p.folders : p.entries).length, el: null, pos: "end" };
+  /** Inject controls into any row that doesn't have them yet. */
+  static decorate(root, documentName) {
+    if (!root.dataset.srRows) {
+      root.dataset.srRows = "1";
+      // Never let a press on our controls start Foundry's drag.
+      root.addEventListener("dragstart", ev => {
+        if (this.slide || ev.target.closest?.(".sr-ctl")) { ev.preventDefault(); ev.stopPropagation(); }
+      }, true);
     }
-    const li = info.li;
-    if (!model.nodes.has(info.key) || info.key === d.key) return null;
-    const target = model.nodes.get(info.key);
-    if (target.kind !== info.kind) return null;
-
-    if (target.kind === "folder") {
-      // Measure the header only, not the open folder's contents.
-      const header = this.#folderHeader(li);
-      if (!header.contains(ev.target)) return null; // over the folder's (empty) body
-      const rect = header.getBoundingClientRect();
-      const y = (ev.clientY - rect.top) / rect.height;
-      const into = dragged.kind === "entry" || (y > 0.25 && y < 0.75);
-      if (into) {
-        const p = model.parents.get(target.key);
-        return { parent: target.key, index: (d.kind === "folder" ? p.folders : p.entries).length, el: header, pos: "into" };
-      }
-      const list = model.listOf(target);
-      const idx = list.indexOf(target.key);
-      return y <= 0.25
-        ? { parent: target.parent, index: idx, el: header, pos: "before" }
-        : { parent: target.parent, index: idx + 1, el: header, pos: "after" };
-    }
-    if (dragged.kind === "folder") return null; // folders always sit above entries
-    const rect = li.getBoundingClientRect();
-    const before = (ev.clientY - rect.top) < rect.height / 2;
-    const list = model.listOf(target);
-    const idx = list.indexOf(target.key);
-    return { parent: target.parent, index: before ? idx : idx + 1, el: li, pos: before ? "before" : "after" };
-  }
-
-  static #model(documentName) {
-    // Cheap enough to rebuild; keeps us in sync with whatever Foundry did last.
-    return new ReorderModel(documentName);
-  }
-
-  static #onDragOver(ev, root, documentName) {
-    if (!this.drag || this.drag.documentName !== documentName) return;
-    const model = this.#model(documentName);
-    const drop = this.#target(ev, root, model);
-    this.#clear(root);
-    ev.stopPropagation(); // keep Foundry's own highlight out of the way
-    if (!drop || model.canPlace(this.drag.key, drop.parent)) return;
-    ev.preventDefault();
-    ev.dataTransfer.dropEffect = "move";
-    if (drop.el) drop.el.classList.add(`sr-sidebar-drop-${drop.pos}`);
-    else {
-      const sel = "[data-folder-id], [data-entry-id], [data-document-id]";
-      const top = [...root.querySelectorAll(sel)].filter(el => !el.parentElement?.closest(sel));
-      top.at(-1)?.classList.add("sr-sidebar-drop-end");
+    for (const li of root.querySelectorAll(this.ROW_SEL)) {
+      if (li.closest(".directory-header, .header-actions")) continue;
+      const info = this.#info(li);
+      if (!info) continue;
+      const host = info.kind === "folder" ? this.#header(li) : li;
+      if (host.querySelector(":scope > .sr-ctl")) continue;
+      host.classList.add("sr-host", `sr-host-${info.kind}`);
+      const ctl = this.#controls(root, documentName, li, info);
+      // On folders, sit just left of the "create" icon at the end of the header.
+      const last = host.lastElementChild;
+      if (info.kind === "folder" && last?.matches("a, button")) host.insertBefore(ctl, last);
+      else host.append(ctl);
     }
   }
 
-  static #clear(root) {
-    root.querySelectorAll("[class*='sr-sidebar-drop-']").forEach(el =>
-      el.classList.remove("sr-sidebar-drop-before", "sr-sidebar-drop-after", "sr-sidebar-drop-into", "sr-sidebar-drop-end"));
+  /** Re-decorate when Foundry adds rows without a full render (e.g. lazy folder contents). */
+  static observe(root, documentName) {
+    if (root.srObserver) return;
+    const run = foundry.utils.debounce(() => this.decorate(root, documentName), 50);
+    root.srObserver = new MutationObserver(muts => {
+      if (muts.some(m => [...m.addedNodes].some(n => n.nodeType === 1 && !n.classList?.contains("sr-ctl")))) run();
+    });
+    root.srObserver.observe(root, { childList: true, subtree: true });
   }
 
-  static async #onDrop(ev, root, documentName) {
-    if (!this.drag || this.drag.documentName !== documentName) return;
-    const drag = this.drag;
-    this.#clear(root);
-    const model = this.#model(documentName);
-    const drop = this.#target(ev, root, model);
-    this.drag = null;
-    ev.preventDefault();
-    ev.stopPropagation();
-    if (!drop || this.busy) return;
-    if (!model.move(drag.key, drop.parent, drop.index)) return;
+  static #controls(root, documentName, li, info) {
+    const ctl = document.createElement("span");
+    ctl.className = "sr-ctl";
+    ctl.draggable = false;
+    ctl.innerHTML = `
+      <a class="sr-ctl-btn" data-dir="up" data-tooltip="${esc(t("RowUpTip"))}"><i class="fa-solid fa-chevron-up"></i></a>
+      <a class="sr-ctl-btn" data-dir="down" data-tooltip="${esc(t("RowDownTip"))}"><i class="fa-solid fa-chevron-down"></i></a>
+      <a class="sr-ctl-grip" data-tooltip="${esc(t("GripTip"))}"><i class="fa-solid fa-grip-lines"></i></a>`;
+    // Swallow clicks so folders don't toggle and entries don't open.
+    for (const type of ["click", "dblclick", "mousedown", "contextmenu"]) {
+      ctl.addEventListener(type, ev => { ev.stopPropagation(); if (type !== "mousedown") ev.preventDefault(); });
+    }
+    for (const btn of ctl.querySelectorAll(".sr-ctl-btn")) {
+      btn.addEventListener("click", ev => {
+        const dir = btn.dataset.dir;
+        const how = ev.shiftKey ? (dir === "up" ? "top" : "bottom") : dir;
+        this.#apply(documentName, model => model.step(info.key, how));
+      });
+    }
+    ctl.querySelector(".sr-ctl-grip").addEventListener("pointerdown", ev => this.#startSlide(ev, root, documentName, li, info));
+    return ctl;
+  }
+
+  static async #apply(documentName, mutate) {
+    if (this.busy) return;
+    const model = new ReorderModel(documentName);
+    if (!mutate(model)) return;
     this.busy = true;
     try {
       const undo = await model.save();
       if (undo) LAST_UNDO.set(documentName, undo);
       SidebarReorder.instances.get(documentName)?.reload();
     } catch (err) {
-      console.error(`${MODULE_ID} | sidebar drop failed`, err);
+      console.error(`${MODULE_ID} | reorder failed`, err);
       ui.notifications.error(t("SaveFailed"));
     } finally {
       this.busy = false;
     }
+  }
+
+  /* ---------- Grip: slide within the same folder ---------- */
+
+  static #startSlide(ev, root, documentName, li, info) {
+    if (ev.button !== 0 || this.busy) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    const model = new ReorderModel(documentName);
+    const node = model.nodes.get(info.key);
+    if (!node) return;
+    // Visible siblings of the same kind, in order (excluding the one being moved).
+    const siblings = model.listOf(node)
+      .filter(k => k !== info.key)
+      .map(k => ({ key: k, ...this.#rowOf(root, info.kind, k) }))
+      .filter(s => s.row && s.row.offsetParent !== null);
+    const grip = ev.currentTarget;
+    grip.setPointerCapture?.(ev.pointerId);
+    li.classList.add("sr-sliding");
+    this.slide = { documentName, root, li, info, siblings, startY: ev.clientY, beforeKey: undefined, grip, pointerId: ev.pointerId };
+
+    const move = e => this.#moveSlide(e);
+    const end = e => { cleanup(); this.#endSlide(e.type === "pointerup"); };
+    const key = e => { if (e.key === "Escape") { cleanup(); this.#endSlide(false); } };
+    const cleanup = () => {
+      grip.removeEventListener("pointermove", move);
+      grip.removeEventListener("pointerup", end);
+      grip.removeEventListener("pointercancel", end);
+      window.removeEventListener("keydown", key, true);
+    };
+    grip.addEventListener("pointermove", move);
+    grip.addEventListener("pointerup", end);
+    grip.addEventListener("pointercancel", end);
+    window.addEventListener("keydown", key, true);
+  }
+
+  static #scroller(el) {
+    for (let p = el.parentElement; p; p = p.parentElement) {
+      const o = getComputedStyle(p).overflowY;
+      if ((o === "auto" || o === "scroll") && p.scrollHeight > p.clientHeight) return p;
+    }
+    return null;
+  }
+
+  static #moveSlide(ev) {
+    const s = this.slide;
+    if (!s) return;
+    // Auto-scroll near the edges of the list.
+    const sc = this.#scroller(s.li);
+    if (sc) {
+      const r = sc.getBoundingClientRect();
+      if (ev.clientY < r.top + 30) sc.scrollTop -= 12;
+      else if (ev.clientY > r.bottom - 30) sc.scrollTop += 12;
+    }
+    s.li.style.transform = `translateY(${ev.clientY - s.startY}px)`;
+
+    // Insert before the first sibling whose middle is below the pointer.
+    let before = null;
+    for (const sib of s.siblings) {
+      const r = sib.row.getBoundingClientRect();
+      if (ev.clientY < r.top + r.height / 2) { before = sib; break; }
+    }
+    const ref = before ?? s.siblings.at(-1);
+    s.beforeKey = before ? before.key : null;
+    if (!ref) return this.#clearLines();
+    const r = ref.row.getBoundingClientRect();
+    const line = this.#line();
+    line.style.left = `${r.left}px`;
+    line.style.width = `${r.width}px`;
+    line.style.top = `${(before ? r.top : r.bottom) - 2}px`;
+    line.style.display = "block";
+  }
+
+  static #line() {
+    let el = document.getElementById("sr-slide-line");
+    if (!el) {
+      el = document.createElement("div");
+      el.id = "sr-slide-line";
+      document.body.append(el);
+    }
+    return el;
+  }
+
+  static #clearLines() {
+    const el = document.getElementById("sr-slide-line");
+    if (el) el.style.display = "none";
+  }
+
+  static #endSlide(commit) {
+    const s = this.slide;
+    this.slide = null;
+    if (!s) return;
+    s.grip.releasePointerCapture?.(s.pointerId);
+    s.li.classList.remove("sr-sliding");
+    s.li.style.transform = "";
+    this.#clearLines();
+    if (!commit || s.beforeKey === undefined) return;
+    this.#apply(s.documentName, model => {
+      const node = model.nodes.get(s.info.key);
+      if (!node) return false;
+      const list = model.listOf(node);
+      let index;
+      if (s.beforeKey) index = list.indexOf(s.beforeKey);
+      else {
+        const last = s.siblings.at(-1)?.key;
+        index = last ? list.indexOf(last) + 1 : list.length;
+      }
+      if (index < 0) return false;
+      const cur = list.indexOf(s.info.key);
+      if (index === cur || index === cur + 1) return false; // didn't move
+      return model.move(s.info.key, node.parent, index);
+    });
   }
 }
 
@@ -770,13 +834,14 @@ class SidebarDrag {
 const SUPPORTED = ["Actor", "Item", "Scene", "JournalEntry", "RollTable", "Cards", "Playlist", "Macro"];
 
 Hooks.once("init", () => {
-  game.settings.register(MODULE_ID, "sidebarDrag", {
-    name: "SR.SettingDrag",
-    hint: "SR.SettingDragHint",
+  game.settings.register(MODULE_ID, "rowControls", {
+    name: "SR.SettingRows",
+    hint: "SR.SettingRowsHint",
     scope: "client",
     config: true,
     type: Boolean,
-    default: true
+    default: true,
+    onChange: () => foundry.utils.debounce(() => window.location.reload(), 100)()
   });
   game.settings.register(MODULE_ID, "showButton", {
     name: "SR.SettingButton",
@@ -806,7 +871,10 @@ Hooks.on("renderDocumentDirectory", (app, html) => {
   if (!SUPPORTED.includes(documentName) || !game.collections.get(documentName)) return;
   const root = html instanceof HTMLElement ? html : html?.[0] ?? app.element;
   if (!root) return;
-  SidebarDrag.attach(app, app.element ?? root, documentName);
+  if (game.settings.get(MODULE_ID, "rowControls")) {
+    SidebarRows.decorate(app.element ?? root, documentName);
+    SidebarRows.observe(app.element ?? root, documentName);
+  }
   if (!game.settings.get(MODULE_ID, "showButton") || root.querySelector(".sr-open")) return;
   const btn = document.createElement("button");
   btn.type = "button";
