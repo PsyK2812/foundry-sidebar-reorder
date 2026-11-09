@@ -2,7 +2,7 @@
   "id": "sidebar-reorder",
   "title": "Sidebar Reorder",
   "description": "Easier rearranging of sidebar folders and entries: clear drop lines when dragging in the sidebar (works even in A–Z folders), plus a Reorder window with arrows, A–Z sorting and undo.",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "authors": [
     {
       "name": "PsyK2812",
@@ -28,7 +28,7 @@
   ],
   "url": "https://github.com/PsyK2812/foundry-sidebar-reorder",
   "manifest": "https://github.com/PsyK2812/foundry-sidebar-reorder/releases/latest/download/module.json",
-  "download": "https://github.com/PsyK2812/foundry-sidebar-reorder/releases/download/v1.1.0/sidebar-reorder.zip",
+  "download": "https://github.com/PsyK2812/foundry-sidebar-reorder/releases/download/v1.1.1/sidebar-reorder.zip",
   "bugs": "https://github.com/PsyK2812/foundry-sidebar-reorder/issues",
   "license": "MIT"
 }

@@ -635,19 +635,37 @@ class SidebarDrag {
     root.addEventListener("dragend", () => { this.drag = null; this.#clear(root); }, true);
   }
 
-  static #itemInfo(li) {
-    if (!li) return null;
-    const isFolder = li.classList.contains("folder") || ("folderId" in li.dataset && !("entryId" in li.dataset));
-    const id = isFolder ? li.dataset.folderId : (li.dataset.entryId ?? li.dataset.documentId);
-    return id ? { key: id, kind: isFolder ? "folder" : "entry" } : null;
+  /**
+   * Find the folder or entry row under an element, without relying on exact class names
+   * (they differ between Foundry versions and themes).
+   */
+  static #findItem(el, root) {
+    const li = el?.closest?.("[data-folder-id], [data-entry-id], [data-document-id], li[data-uuid]");
+    if (!li || !root.contains(li) || li.closest(".directory-header, .header-actions, .directory-footer")) return null;
+    let kind, key;
+    if (li.dataset.folderId) { kind = "folder"; key = li.dataset.folderId; }
+    else if (li.dataset.entryId || li.dataset.documentId) { kind = "entry"; key = li.dataset.entryId ?? li.dataset.documentId; }
+    else {
+      const parsed = foundry.utils.parseUuid?.(li.dataset.uuid);
+      if (!parsed?.id) return null;
+      kind = (parsed.documentType ?? parsed.type) === "Folder" ? "folder" : "entry";
+      key = parsed.id;
+    }
+    return { li, key, kind };
+  }
+
+  /** The clickable header row of a folder (not its contents). */
+  static #folderHeader(li) {
+    return li.querySelector(":scope > header, :scope > .folder-header") ?? li.firstElementChild ?? li;
   }
 
   static #onDragStart(ev, documentName) {
     this.drag = null;
     if (!game.settings.get(MODULE_ID, "sidebarDrag") || !game.user.isGM) return;
-    const li = ev.target.closest?.(".directory-item");
-    const info = this.#itemInfo(li);
-    if (info) this.drag = { documentName, ...info };
+    const root = ev.currentTarget;
+    const info = this.#findItem(ev.target, root);
+    if (info) this.drag = { documentName, key: info.key, kind: info.kind };
+    else console.warn(`${MODULE_ID} | drag start not recognised`, ev.target?.outerHTML?.slice(0, 300));
   }
 
   /** Where would a drop at this event land? */
@@ -655,21 +673,22 @@ class SidebarDrag {
     const d = this.drag;
     if (!d || !model.nodes.has(d.key)) return null;
     const dragged = model.nodes.get(d.key);
-    const li = ev.target.closest?.(".directory-item");
+    const info = this.#findItem(ev.target, root);
 
-    // Empty space in the list: append at top level.
-    if (!li) {
-      if (!ev.target.closest?.(".directory-list")) return null;
+    // Not over a row: append at the top level (unless over the tab's header).
+    if (!info) {
+      if (!root.contains(ev.target) || ev.target.closest?.(".directory-header, .header-actions")) return null;
       const p = model.parents.get(ROOT);
       return { parent: ROOT, index: (d.kind === "folder" ? p.folders : p.entries).length, el: null, pos: "end" };
     }
-    const info = this.#itemInfo(li);
-    if (!info || !model.nodes.has(info.key) || info.key === d.key) return null;
+    const li = info.li;
+    if (!model.nodes.has(info.key) || info.key === d.key) return null;
     const target = model.nodes.get(info.key);
+    if (target.kind !== info.kind) return null;
 
     if (target.kind === "folder") {
       // Measure the header only, not the open folder's contents.
-      const header = li.querySelector(":scope > .folder-header") ?? li;
+      const header = this.#folderHeader(li);
       if (!header.contains(ev.target)) return null; // over the folder's (empty) body
       const rect = header.getBoundingClientRect();
       const y = (ev.clientY - rect.top) / rect.height;
@@ -707,7 +726,11 @@ class SidebarDrag {
     ev.preventDefault();
     ev.dataTransfer.dropEffect = "move";
     if (drop.el) drop.el.classList.add(`sr-sidebar-drop-${drop.pos}`);
-    else ev.target.closest(".directory-list")?.classList.add("sr-sidebar-drop-end");
+    else {
+      const sel = "[data-folder-id], [data-entry-id], [data-document-id]";
+      const top = [...root.querySelectorAll(sel)].filter(el => !el.parentElement?.closest(sel));
+      top.at(-1)?.classList.add("sr-sidebar-drop-end");
+    }
   }
 
   static #clear(root) {
@@ -718,10 +741,10 @@ class SidebarDrag {
   static async #onDrop(ev, root, documentName) {
     if (!this.drag || this.drag.documentName !== documentName) return;
     const drag = this.drag;
-    this.drag = null;
     this.#clear(root);
     const model = this.#model(documentName);
     const drop = this.#target(ev, root, model);
+    this.drag = null;
     ev.preventDefault();
     ev.stopPropagation();
     if (!drop || this.busy) return;
@@ -755,6 +778,15 @@ Hooks.once("init", () => {
     type: Boolean,
     default: true
   });
+  game.settings.register(MODULE_ID, "showButton", {
+    name: "SR.SettingButton",
+    hint: "SR.SettingButtonHint",
+    scope: "client",
+    config: true,
+    type: Boolean,
+    default: false,
+    onChange: () => { for (const type of SUPPORTED) refreshDirectory(type); }
+  });
   game.keybindings.register(MODULE_ID, "undo", {
     name: "SR.KeyUndo",
     hint: "SR.KeyUndoHint",
@@ -775,7 +807,7 @@ Hooks.on("renderDocumentDirectory", (app, html) => {
   const root = html instanceof HTMLElement ? html : html?.[0] ?? app.element;
   if (!root) return;
   SidebarDrag.attach(app, app.element ?? root, documentName);
-  if (root.querySelector(".sr-open")) return;
+  if (!game.settings.get(MODULE_ID, "showButton") || root.querySelector(".sr-open")) return;
   const btn = document.createElement("button");
   btn.type = "button";
   btn.className = "sr-open";

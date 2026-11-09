@@ -14,7 +14,9 @@ With the module on, dragging inside any sidebar tab (as GM) works better than Fo
 
 Dragging items to the canvas, from compendiums, or between tabs works as before.
 
-## Reorder window
+## Reorder window (optional)
+
+Hidden by default. Turn on **Module Settings → Show Reorder button** to get a button in each tab that opens it.
 
 - Full folder tree of the tab in one window, in the same order the sidebar shows
 - **Drag and drop**: drop above or below a row to reorder, or on the middle of a folder to put the item inside it (works for subfolders too)
@@ -36,7 +38,7 @@ https://github.com/PsyK2812/foundry-sidebar-reorder/releases/latest/download/mod
 
 ## Usage
 
-As GM, open any sidebar tab and click **Reorder** in its header.
+As GM, just drag in the sidebar. For the window, enable the button or use the macro below.
 From a macro: `game.modules.get("sidebar-reorder").api.open("Scene")` (or `"Actor"`, `"Item"`, `"JournalEntry"`, `"RollTable"`, `"Cards"`, `"Playlist"`, `"Macro"`).
 
 ## License
