@@ -674,8 +674,29 @@ class SidebarRows {
       // On folders, sit just left of the "create" icon at the end of the header.
       const last = host.lastElementChild;
       if (info.kind === "folder" && last?.matches("a, button")) host.insertBefore(ctl, last);
-      else host.append(ctl);
+      else {
+        host.append(ctl);
+        host.addEventListener("pointerenter", () => this.#placeEntryControls(host, ctl));
+      }
     }
+  }
+
+  /**
+   * Entry controls float over the row; slide them left of any small icons that
+   * Foundry or other modules put at the right edge, so nothing is covered.
+   */
+  static #placeEntryControls(host, ctl) {
+    const hr = host.getBoundingClientRect();
+    if (!hr.width) return;
+    let edge = hr.right;
+    for (const el of host.querySelectorAll("a, button, i, img, svg, .control, [data-action]")) {
+      if (ctl.contains(el)) continue;
+      const r = el.getBoundingClientRect();
+      if (!r.width || r.width > 60 || r.height > hr.height) continue;  // skip banners/thumbnails
+      if (r.right < hr.right - 60 || r.left < hr.left + hr.width / 2) continue; // only the right edge
+      edge = Math.min(edge, r.left);
+    }
+    ctl.style.right = `${Math.round(hr.right - edge) + 4}px`;
   }
 
   /** Re-decorate when Foundry adds rows without a full render (e.g. lazy folder contents). */
