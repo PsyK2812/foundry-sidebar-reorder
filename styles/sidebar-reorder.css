@@ -110,9 +110,6 @@
   z-index: 2;
 }
 .sr-host:hover > .sr-ctl, .sr-sliding .sr-ctl { opacity: 1; }
-/* On folders, take up no space unless hovered, so the create icons stay together */
-.sr-host-folder > .sr-ctl { display: none; margin-left: 0; }
-.sr-host-folder:hover > .sr-ctl, .sr-sliding .sr-host-folder > .sr-ctl { display: flex; }
 /* Entries (incl. scene banners): float over the right side of the row */
 .sr-host-entry > .sr-ctl {
   position: absolute;
