@@ -672,9 +672,12 @@ class SidebarRows {
       host.classList.add("sr-host", `sr-host-${info.kind}`);
       const ctl = this.#controls(root, documentName, li, info);
       // On folders, sit just left of the "create" icon at the end of the header.
-      const last = host.lastElementChild;
-      if (info.kind === "folder" && last?.matches("a, button")) host.insertBefore(ctl, last);
-      else {
+      if (info.kind === "folder") {
+        // Go in front of the whole group of trailing icons (create folder, create entry, ...).
+        let first = null;
+        for (let el = host.lastElementChild; el?.matches("a, button"); el = el.previousElementSibling) first = el;
+        if (first) host.insertBefore(ctl, first); else host.append(ctl);
+      } else {
         host.append(ctl);
         host.addEventListener("pointerenter", () => this.#placeEntryControls(host, ctl));
       }
