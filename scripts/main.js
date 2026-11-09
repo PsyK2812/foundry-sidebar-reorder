@@ -237,10 +237,11 @@ class ReorderModel {
       })
     };
 
-    // Folders first so moved entries land in folders that are already in place.
+    // Root mode first, then folders (so moved entries land in folders that are already in place).
+    if (rootMode !== null) await setRootSortingMode(this.documentName, rootMode);
     if (fUpdates.length) await Folder.implementation.updateDocuments(fUpdates);
     if (eUpdates.length) await cls.updateDocuments(eUpdates);
-    if (rootMode !== null) await setRootSortingMode(this.documentName, rootMode);
+    refreshDirectory(this.documentName);
     return undo;
   }
 }
@@ -250,9 +251,24 @@ async function applyUndo(undo) {
   const collection = game.collections.get(undo.documentName);
   const folders = undo.folders.filter(u => game.folders.has(u._id));
   const entries = undo.entries.filter(u => collection.has(u._id));
+  if (undo.rootMode) await setRootSortingMode(undo.documentName, undo.rootMode);
   if (folders.length) await Folder.implementation.updateDocuments(folders);
   if (entries.length) await cls.updateDocuments(entries);
-  if (undo.rootMode) await setRootSortingMode(undo.documentName, undo.rootMode);
+  refreshDirectory(undo.documentName);
+}
+
+/**
+ * The sidebar caches its folder tree. Changing the sorting-mode setting only redraws it,
+ * so rebuild the tree and re-render the directory after any save.
+ */
+function refreshDirectory(documentName) {
+  const collection = game.collections.get(documentName);
+  if (!collection) return;
+  try { collection.initializeTree?.(); } catch (err) { console.warn(`${MODULE_ID} | initializeTree failed`, err); }
+  collection.render?.(true);
+  for (const app of Object.values(ui)) {
+    if (app?.collection === collection && app.rendered) app.render();
+  }
 }
 
 /* -------------------------------------------- */
@@ -631,5 +647,8 @@ for (const hook of ["createFolder", "deleteFolder", "updateFolder"]) {
 }
 Hooks.on("updateSetting", (setting) => {
   if (setting.key !== "core.collectionSortingModes") return;
-  for (const type of SUPPORTED) notify(type);
+  for (const type of SUPPORTED) {
+    refreshDirectory(type); // every client, so players' sidebars follow too
+    notify(type);
+  }
 });
