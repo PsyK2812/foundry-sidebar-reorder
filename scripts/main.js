@@ -1,6 +1,8 @@
 const MODULE_ID = "sidebar-reorder";
 const { ApplicationV2 } = foundry.applications.api;
 const ROOT = "__root__";
+/** documentName -> undo snapshot of the last save (window or sidebar drag). */
+const LAST_UNDO = new Map();
 
 /* -------------------------------------------- */
 /*  Helpers                                     */
@@ -246,6 +248,19 @@ class ReorderModel {
   }
 }
 
+/** Undo the most recent reorder in the currently open sidebar tab. */
+async function undoLastSidebarChange() {
+  const active = ui.sidebar?.tabGroups?.primary ?? ui.sidebar?.activeTab;
+  const tab = active ? ui[active] : null;
+  const documentName = tab?.documentName ?? tab?.constructor?.documentName;
+  const undo = documentName && LAST_UNDO.get(documentName);
+  if (!undo) return ui.notifications.info(t("NothingToUndo"));
+  LAST_UNDO.delete(documentName);
+  await applyUndo(undo);
+  SidebarReorder.instances.get(documentName)?.reload();
+  ui.notifications.info(t("Undone"));
+}
+
 async function applyUndo(undo) {
   const cls = getDocumentClass(undo.documentName);
   const collection = game.collections.get(undo.documentName);
@@ -300,9 +315,12 @@ class SidebarReorder extends ApplicationV2 {
     this.model = new ReorderModel(this.documentName);
     this.collapsed = new Set();
     this.stale = false;
-    this.undo = null;
     this.busy = false;
   }
+
+  /** Undo snapshots are shared with sidebar drag-and-drop. */
+  get undo() { return LAST_UNDO.get(this.documentName) ?? null; }
+  set undo(v) { if (v) LAST_UNDO.set(this.documentName, v); else LAST_UNDO.delete(this.documentName); }
 
   static DEFAULT_OPTIONS = {
     classes: ["sidebar-reorder"],
@@ -593,12 +611,157 @@ class SidebarReorder extends ApplicationV2 {
 }
 
 /* -------------------------------------------- */
+/*  Better drag & drop directly in the sidebar  */
+/* -------------------------------------------- */
+
+/**
+ * Takes over drag-and-drop *within* a sidebar directory:
+ * - a line shows exactly where the item will land (above / below / inside a folder)
+ * - drops always work, even in folders sorted A–Z (they switch to manual order)
+ * - folders can be reordered among each other at any level
+ * Drags that start elsewhere (compendiums, canvas, other tabs) are left to Foundry.
+ */
+class SidebarDrag {
+  static drag = null;   // { documentName, key, kind }
+  static busy = false;
+
+  static attach(app, root, documentName) {
+    if (root.dataset.srDrag) return;
+    root.dataset.srDrag = "1";
+    root.addEventListener("dragstart", ev => this.#onDragStart(ev, documentName), true);
+    root.addEventListener("dragover", ev => this.#onDragOver(ev, root, documentName), true);
+    root.addEventListener("dragleave", ev => { if (!root.contains(ev.relatedTarget)) this.#clear(root); }, true);
+    root.addEventListener("drop", ev => this.#onDrop(ev, root, documentName), true);
+    root.addEventListener("dragend", () => { this.drag = null; this.#clear(root); }, true);
+  }
+
+  static #itemInfo(li) {
+    if (!li) return null;
+    const isFolder = li.classList.contains("folder") || ("folderId" in li.dataset && !("entryId" in li.dataset));
+    const id = isFolder ? li.dataset.folderId : (li.dataset.entryId ?? li.dataset.documentId);
+    return id ? { key: id, kind: isFolder ? "folder" : "entry" } : null;
+  }
+
+  static #onDragStart(ev, documentName) {
+    this.drag = null;
+    if (!game.settings.get(MODULE_ID, "sidebarDrag") || !game.user.isGM) return;
+    const li = ev.target.closest?.(".directory-item");
+    const info = this.#itemInfo(li);
+    if (info) this.drag = { documentName, ...info };
+  }
+
+  /** Where would a drop at this event land? */
+  static #target(ev, root, model) {
+    const d = this.drag;
+    if (!d || !model.nodes.has(d.key)) return null;
+    const dragged = model.nodes.get(d.key);
+    const li = ev.target.closest?.(".directory-item");
+
+    // Empty space in the list: append at top level.
+    if (!li) {
+      if (!ev.target.closest?.(".directory-list")) return null;
+      const p = model.parents.get(ROOT);
+      return { parent: ROOT, index: (d.kind === "folder" ? p.folders : p.entries).length, el: null, pos: "end" };
+    }
+    const info = this.#itemInfo(li);
+    if (!info || !model.nodes.has(info.key) || info.key === d.key) return null;
+    const target = model.nodes.get(info.key);
+
+    if (target.kind === "folder") {
+      // Measure the header only, not the open folder's contents.
+      const header = li.querySelector(":scope > .folder-header") ?? li;
+      if (!header.contains(ev.target)) return null; // over the folder's (empty) body
+      const rect = header.getBoundingClientRect();
+      const y = (ev.clientY - rect.top) / rect.height;
+      const into = dragged.kind === "entry" || (y > 0.25 && y < 0.75);
+      if (into) {
+        const p = model.parents.get(target.key);
+        return { parent: target.key, index: (d.kind === "folder" ? p.folders : p.entries).length, el: header, pos: "into" };
+      }
+      const list = model.listOf(target);
+      const idx = list.indexOf(target.key);
+      return y <= 0.25
+        ? { parent: target.parent, index: idx, el: header, pos: "before" }
+        : { parent: target.parent, index: idx + 1, el: header, pos: "after" };
+    }
+    if (dragged.kind === "folder") return null; // folders always sit above entries
+    const rect = li.getBoundingClientRect();
+    const before = (ev.clientY - rect.top) < rect.height / 2;
+    const list = model.listOf(target);
+    const idx = list.indexOf(target.key);
+    return { parent: target.parent, index: before ? idx : idx + 1, el: li, pos: before ? "before" : "after" };
+  }
+
+  static #model(documentName) {
+    // Cheap enough to rebuild; keeps us in sync with whatever Foundry did last.
+    return new ReorderModel(documentName);
+  }
+
+  static #onDragOver(ev, root, documentName) {
+    if (!this.drag || this.drag.documentName !== documentName) return;
+    const model = this.#model(documentName);
+    const drop = this.#target(ev, root, model);
+    this.#clear(root);
+    ev.stopPropagation(); // keep Foundry's own highlight out of the way
+    if (!drop || model.canPlace(this.drag.key, drop.parent)) return;
+    ev.preventDefault();
+    ev.dataTransfer.dropEffect = "move";
+    if (drop.el) drop.el.classList.add(`sr-sidebar-drop-${drop.pos}`);
+    else ev.target.closest(".directory-list")?.classList.add("sr-sidebar-drop-end");
+  }
+
+  static #clear(root) {
+    root.querySelectorAll("[class*='sr-sidebar-drop-']").forEach(el =>
+      el.classList.remove("sr-sidebar-drop-before", "sr-sidebar-drop-after", "sr-sidebar-drop-into", "sr-sidebar-drop-end"));
+  }
+
+  static async #onDrop(ev, root, documentName) {
+    if (!this.drag || this.drag.documentName !== documentName) return;
+    const drag = this.drag;
+    this.drag = null;
+    this.#clear(root);
+    const model = this.#model(documentName);
+    const drop = this.#target(ev, root, model);
+    ev.preventDefault();
+    ev.stopPropagation();
+    if (!drop || this.busy) return;
+    if (!model.move(drag.key, drop.parent, drop.index)) return;
+    this.busy = true;
+    try {
+      const undo = await model.save();
+      if (undo) LAST_UNDO.set(documentName, undo);
+      SidebarReorder.instances.get(documentName)?.reload();
+    } catch (err) {
+      console.error(`${MODULE_ID} | sidebar drop failed`, err);
+      ui.notifications.error(t("SaveFailed"));
+    } finally {
+      this.busy = false;
+    }
+  }
+}
+
+/* -------------------------------------------- */
 /*  Hooks                                       */
 /* -------------------------------------------- */
 
 const SUPPORTED = ["Actor", "Item", "Scene", "JournalEntry", "RollTable", "Cards", "Playlist", "Macro"];
 
 Hooks.once("init", () => {
+  game.settings.register(MODULE_ID, "sidebarDrag", {
+    name: "SR.SettingDrag",
+    hint: "SR.SettingDragHint",
+    scope: "client",
+    config: true,
+    type: Boolean,
+    default: true
+  });
+  game.keybindings.register(MODULE_ID, "undo", {
+    name: "SR.KeyUndo",
+    hint: "SR.KeyUndoHint",
+    editable: [{ key: "KeyZ", modifiers: ["Alt"] }],
+    restricted: true,
+    onDown: () => { undoLastSidebarChange(); return true; }
+  });
   game.modules.get(MODULE_ID).api = {
     open: (documentName = "Scene") => SidebarReorder.open(documentName)
   };
@@ -610,7 +773,9 @@ Hooks.on("renderDocumentDirectory", (app, html) => {
   const documentName = app.documentName ?? app.constructor.documentName;
   if (!SUPPORTED.includes(documentName) || !game.collections.get(documentName)) return;
   const root = html instanceof HTMLElement ? html : html?.[0] ?? app.element;
-  if (!root || root.querySelector(".sr-open")) return;
+  if (!root) return;
+  SidebarDrag.attach(app, app.element ?? root, documentName);
+  if (root.querySelector(".sr-open")) return;
   const btn = document.createElement("button");
   btn.type = "button";
   btn.className = "sr-open";

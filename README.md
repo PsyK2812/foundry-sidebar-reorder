@@ -2,7 +2,19 @@
 
 A Foundry VTT module (v13–v14) that gives the GM a window for rearranging folders and entries in any sidebar tab: Scenes, Actors, Items, Journal, Roll Tables, Cards, Playlists and Macros.
 
-## Features
+## Dragging in the sidebar
+
+With the module on, dragging inside any sidebar tab (as GM) works better than Foundry's default:
+
+- An orange line shows exactly where the item will land; a highlighted folder means it goes inside
+- Drop on the top or bottom edge of a folder to reorder folders, on its middle to put something inside
+- Works everywhere, including the top level and folders sorted A–Z (those switch to manual order so your drop sticks)
+- Each drop saves immediately. **Alt+Z** undoes the last one (rebindable under Configure Controls)
+- Turn it off per user under **Module Settings → Better drag & drop in the sidebar**
+
+Dragging items to the canvas, from compendiums, or between tabs works as before.
+
+## Reorder window
 
 - Full folder tree of the tab in one window, in the same order the sidebar shows
 - **Drag and drop**: drop above or below a row to reorder, or on the middle of a folder to put the item inside it (works for subfolders too)

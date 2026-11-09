@@ -27,6 +27,11 @@
     "Stale": "Something in this tab changed elsewhere. Save to apply your order anyway, or Discard to reload.",
     "ErrorIntoSelf": "A folder can't go inside itself or one of its subfolders.",
     "ErrorDepth": "That would nest folders deeper than the maximum of {max} levels.",
-    "ErrorType": "There's no sidebar directory for \"{type}\"."
+    "ErrorType": "There's no sidebar directory for \"{type}\".",
+    "SettingDrag": "Better drag & drop in the sidebar",
+    "SettingDragHint": "Shows a line where a dragged folder or entry will land, and lets you reorder anywhere, even in folders sorted A–Z (they switch to manual order). GM only.",
+    "KeyUndo": "Undo last reorder",
+    "KeyUndoHint": "Puts back the order from before the last drag or save in the open sidebar tab.",
+    "NothingToUndo": "Nothing to undo in this tab."
   }
 }

@@ -95,3 +95,17 @@
 
 /* Sidebar header button */
 .sr-open { flex: 0 0 auto; white-space: nowrap; }
+
+/* In-sidebar drop indicators (pseudo-elements so they sit on top of scene thumbnails) */
+.sr-sidebar-drop-before, .sr-sidebar-drop-after, .sr-sidebar-drop-into, .sr-sidebar-drop-end { position: relative; }
+.sr-sidebar-drop-before::after, .sr-sidebar-drop-after::after, .sr-sidebar-drop-end::after, .sr-sidebar-drop-into::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  pointer-events: none;
+}
+.sr-sidebar-drop-before::after { top: -2px; height: 4px; background: var(--color-warm-1, #ee9b3a); }
+.sr-sidebar-drop-after::after, .sr-sidebar-drop-end::after { bottom: -2px; height: 4px; background: var(--color-warm-1, #ee9b3a); }
+.sr-sidebar-drop-into::after { inset: 0; border: 2px solid var(--color-warm-1, #ee9b3a); background: rgba(238, 155, 58, 0.15); }
