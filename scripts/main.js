@@ -635,6 +635,20 @@ class SidebarRows {
     return li.querySelector(":scope > header, :scope > .folder-header") ?? li.firstElementChild ?? li;
   }
 
+  static #isVisible(root, kind, key) {
+    const li = this.#rowOf(root, kind, key)?.li;
+    return !!li && li.offsetParent !== null && getComputedStyle(li).display !== "none";
+  }
+
+  /** Remove any leftover slide styling (e.g. if a render happened mid-animation). */
+  static clean(root) {
+    if (this.slide) return;
+    root.querySelectorAll(".sr-shift, .sr-sliding, .sr-settling").forEach(el => {
+      el.classList.remove("sr-shift", "sr-sliding", "sr-settling");
+      el.style.transform = "";
+    });
+  }
+
   static #rowOf(root, kind, key) {
     const li = root.querySelector(kind === "folder" ? `[data-folder-id="${key}"]` : `[data-entry-id="${key}"], [data-document-id="${key}"]`);
     return li ? { li, row: kind === "folder" ? this.#header(li) : li } : null;
@@ -689,8 +703,19 @@ class SidebarRows {
     for (const btn of ctl.querySelectorAll(".sr-ctl-btn")) {
       btn.addEventListener("click", ev => {
         const dir = btn.dataset.dir;
-        const how = ev.shiftKey ? (dir === "up" ? "top" : "bottom") : dir;
-        this.#apply(documentName, model => model.step(info.key, how));
+        if (ev.shiftKey) return this.#apply(documentName, model => model.step(info.key, dir === "up" ? "top" : "bottom"));
+        // Step past the next *visible* row, so it behaves while the sidebar search is filtering.
+        this.#apply(documentName, model => {
+          const node = model.nodes.get(info.key);
+          if (!node) return false;
+          const list = model.listOf(node);
+          const visible = list.filter(k => k === info.key || this.#isVisible(root, info.kind, k));
+          const i = visible.indexOf(info.key);
+          const neighbour = visible[dir === "up" ? i - 1 : i + 1];
+          if (!neighbour) return false;
+          const ni = list.indexOf(neighbour);
+          return model.move(info.key, node.parent, dir === "up" ? ni : ni + 1);
+        });
       });
     }
     ctl.querySelector(".sr-ctl-grip").addEventListener("pointerdown", ev => this.#startSlide(ev, root, documentName, li, info));
@@ -727,7 +752,7 @@ class SidebarRows {
     // All visible rows of the same kind in this folder, in order, measured once.
     const items = model.listOf(node)
       .map(k => ({ key: k, li: this.#rowOf(root, info.kind, k)?.li }))
-      .filter(it => it.li && it.li.offsetParent !== null)
+      .filter(it => it.li && this.#isVisible(root, info.kind, it.key))
       .map(it => {
         const r = it.li.getBoundingClientRect();
         return { ...it, top: r.top, height: r.height };
@@ -745,7 +770,7 @@ class SidebarRows {
     for (const o of others) o.li.classList.add("sr-shift");
 
     this.slide = {
-      documentName, info, li, grip, pointerId: ev.pointerId, scroller,
+      documentName, info, li, root, grip, pointerId: ev.pointerId, scroller,
       startY: ev.clientY, startScroll: scroller?.scrollTop ?? 0,
       self, others, from, gap, index: from, lastY: ev.clientY, raf: null
     };
@@ -863,8 +888,9 @@ class SidebarRows {
         if (index < 0) return false;
         return model.move(s.info.key, node.parent, index);
       }).finally(() => {
-        // Usually the sidebar has re-rendered by now; if not, tidy up the old rows.
-        if (s.li.isConnected) reset();
+        // Usually the sidebar has re-rendered by now; tidy up whatever is left either way.
+        reset();
+        this.clean(s.root);
       });
     }, 160);
   }
@@ -915,6 +941,7 @@ Hooks.on("renderDocumentDirectory", (app, html) => {
   const root = html instanceof HTMLElement ? html : html?.[0] ?? app.element;
   if (!root) return;
   if (game.settings.get(MODULE_ID, "rowControls")) {
+    SidebarRows.clean(app.element ?? root);
     SidebarRows.decorate(app.element ?? root, documentName);
     SidebarRows.observe(app.element ?? root, documentName);
   }
