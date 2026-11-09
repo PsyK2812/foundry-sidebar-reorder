@@ -679,9 +679,9 @@ class SidebarRows {
     ctl.className = "sr-ctl";
     ctl.draggable = false;
     ctl.innerHTML = `
-      <a class="sr-ctl-btn" data-dir="up" data-tooltip="${esc(t("RowUpTip"))}"><i class="fa-solid fa-chevron-up"></i></a>
-      <a class="sr-ctl-btn" data-dir="down" data-tooltip="${esc(t("RowDownTip"))}"><i class="fa-solid fa-chevron-down"></i></a>
-      <a class="sr-ctl-grip" data-tooltip="${esc(t("GripTip"))}"><i class="fa-solid fa-grip-lines"></i></a>`;
+      <a class="sr-ctl-btn" data-dir="up"><i class="fa-solid fa-chevron-up"></i></a>
+      <a class="sr-ctl-btn" data-dir="down"><i class="fa-solid fa-chevron-down"></i></a>
+      <a class="sr-ctl-grip"><i class="fa-solid fa-grip-lines"></i></a>`;
     // Swallow clicks so folders don't toggle and entries don't open.
     for (const type of ["click", "dblclick", "mousedown", "contextmenu"]) {
       ctl.addEventListener(type, ev => { ev.stopPropagation(); if (type !== "mousedown") ev.preventDefault(); });
@@ -717,25 +717,42 @@ class SidebarRows {
   /* ---------- Grip: slide within the same folder ---------- */
 
   static #startSlide(ev, root, documentName, li, info) {
-    if (ev.button !== 0 || this.busy) return;
+    if (ev.button !== 0 || this.busy || this.slide) return;
     ev.preventDefault();
     ev.stopPropagation();
     const model = new ReorderModel(documentName);
     const node = model.nodes.get(info.key);
     if (!node) return;
-    // Visible siblings of the same kind, in order (excluding the one being moved).
-    const siblings = model.listOf(node)
-      .filter(k => k !== info.key)
-      .map(k => ({ key: k, ...this.#rowOf(root, info.kind, k) }))
-      .filter(s => s.row && s.row.offsetParent !== null);
+
+    // All visible rows of the same kind in this folder, in order, measured once.
+    const items = model.listOf(node)
+      .map(k => ({ key: k, li: this.#rowOf(root, info.kind, k)?.li }))
+      .filter(it => it.li && it.li.offsetParent !== null)
+      .map(it => {
+        const r = it.li.getBoundingClientRect();
+        return { ...it, top: r.top, height: r.height };
+      });
+    const from = items.findIndex(it => it.key === info.key);
+    if (from < 0 || items.length < 2) return;
+    const gap = Math.max(0, items[1].top - (items[0].top + items[0].height));
+    const self = items[from];
+    const others = items.filter((_, i) => i !== from);
+
     const grip = ev.currentTarget;
     grip.setPointerCapture?.(ev.pointerId);
+    const scroller = this.#scroller(li);
     li.classList.add("sr-sliding");
-    this.slide = { documentName, root, li, info, siblings, startY: ev.clientY, beforeKey: undefined, grip, pointerId: ev.pointerId };
+    for (const o of others) o.li.classList.add("sr-shift");
 
-    const move = e => this.#moveSlide(e);
+    this.slide = {
+      documentName, info, li, grip, pointerId: ev.pointerId, scroller,
+      startY: ev.clientY, startScroll: scroller?.scrollTop ?? 0,
+      self, others, from, gap, index: from, lastY: ev.clientY, raf: null
+    };
+
+    const move = e => { this.slide.lastY = e.clientY; this.#queue(); };
     const end = e => { cleanup(); this.#endSlide(e.type === "pointerup"); };
-    const key = e => { if (e.key === "Escape") { cleanup(); this.#endSlide(false); } };
+    const key = e => { if (e.key === "Escape") { e.preventDefault(); cleanup(); this.#endSlide(false); } };
     const cleanup = () => {
       grip.removeEventListener("pointermove", move);
       grip.removeEventListener("pointerup", end);
@@ -756,74 +773,100 @@ class SidebarRows {
     return null;
   }
 
-  static #moveSlide(ev) {
+  /** One update per animation frame; keeps going while auto-scrolling near the edges. */
+  static #queue() {
     const s = this.slide;
-    if (!s) return;
-    // Auto-scroll near the edges of the list.
-    const sc = this.#scroller(s.li);
-    if (sc) {
-      const r = sc.getBoundingClientRect();
-      if (ev.clientY < r.top + 30) sc.scrollTop -= 12;
-      else if (ev.clientY > r.bottom - 30) sc.scrollTop += 12;
-    }
-    s.li.style.transform = `translateY(${ev.clientY - s.startY}px)`;
-
-    // Insert before the first sibling whose middle is below the pointer.
-    let before = null;
-    for (const sib of s.siblings) {
-      const r = sib.row.getBoundingClientRect();
-      if (ev.clientY < r.top + r.height / 2) { before = sib; break; }
-    }
-    const ref = before ?? s.siblings.at(-1);
-    s.beforeKey = before ? before.key : null;
-    if (!ref) return this.#clearLines();
-    const r = ref.row.getBoundingClientRect();
-    const line = this.#line();
-    line.style.left = `${r.left}px`;
-    line.style.width = `${r.width}px`;
-    line.style.top = `${(before ? r.top : r.bottom) - 2}px`;
-    line.style.display = "block";
+    if (!s || s.raf) return;
+    s.raf = requestAnimationFrame(() => {
+      s.raf = null;
+      if (this.slide !== s) return;
+      let again = false;
+      if (s.scroller) {
+        const r = s.scroller.getBoundingClientRect();
+        const edge = 40;
+        let d = 0;
+        if (s.lastY < r.top + edge) d = -Math.ceil((r.top + edge - s.lastY) / 4);
+        else if (s.lastY > r.bottom - edge) d = Math.ceil((s.lastY - (r.bottom - edge)) / 4);
+        if (d) {
+          const before = s.scroller.scrollTop;
+          s.scroller.scrollTop += d;
+          again = s.scroller.scrollTop !== before;
+        }
+      }
+      this.#layout();
+      if (again) this.#queue();
+    });
   }
 
-  static #line() {
-    let el = document.getElementById("sr-slide-line");
-    if (!el) {
-      el = document.createElement("div");
-      el.id = "sr-slide-line";
-      document.body.append(el);
-    }
-    return el;
+  static #layout() {
+    const s = this.slide;
+    const scrolled = (s.scroller?.scrollTop ?? 0) - s.startScroll;
+    // Position in the list's own coordinates (unaffected by scrolling).
+    const dy = s.lastY - s.startY + scrolled;
+    s.li.style.transform = `translate3d(0, ${dy}px, 0)`;
+
+    // New slot = number of other rows whose middle is above the dragged row's middle.
+    const centre = s.self.top + s.self.height / 2 + dy;
+    let index = 0;
+    for (const o of s.others) if (o.top + o.height / 2 < centre) index++;
+    s.index = index;
+
+    const step = s.self.height + s.gap;
+    s.others.forEach((o, p) => {
+      const k = p < s.from ? p : p + 1;   // original position
+      let shift = 0;
+      if (k > s.from && p < index) shift = -step;      // dragged moved below it → slide up
+      else if (k < s.from && p >= index) shift = step; // dragged moved above it → slide down
+      o.li.style.transform = shift ? `translate3d(0, ${shift}px, 0)` : "";
+    });
   }
 
-  static #clearLines() {
-    const el = document.getElementById("sr-slide-line");
-    if (el) el.style.display = "none";
+  /** Where the dragged row ends up, relative to where it started. */
+  static #restingOffset(s) {
+    let off = 0;
+    s.others.forEach((o, p) => {
+      const k = p < s.from ? p : p + 1;
+      if (k > s.from && p < s.index) off += o.height + s.gap;
+      else if (k < s.from && p >= s.index) off -= o.height + s.gap;
+    });
+    return off;
   }
 
   static #endSlide(commit) {
     const s = this.slide;
     this.slide = null;
     if (!s) return;
+    if (s.raf) cancelAnimationFrame(s.raf);
     s.grip.releasePointerCapture?.(s.pointerId);
-    s.li.classList.remove("sr-sliding");
-    s.li.style.transform = "";
-    this.#clearLines();
-    if (!commit || s.beforeKey === undefined) return;
-    this.#apply(s.documentName, model => {
-      const node = model.nodes.get(s.info.key);
-      if (!node) return false;
-      const list = model.listOf(node);
-      let index;
-      if (s.beforeKey) index = list.indexOf(s.beforeKey);
-      else {
-        const last = s.siblings.at(-1)?.key;
-        index = last ? list.indexOf(last) + 1 : list.length;
-      }
-      if (index < 0) return false;
-      const cur = list.indexOf(s.info.key);
-      if (index === cur || index === cur + 1) return false; // didn't move
-      return model.move(s.info.key, node.parent, index);
-    });
+    const moved = commit && s.index !== s.from;
+    const reset = () => {
+      s.li.classList.remove("sr-sliding", "sr-settling");
+      s.li.style.transform = "";
+      for (const o of s.others) { o.li.classList.remove("sr-shift"); o.li.style.transform = ""; }
+    };
+
+    // Glide the dragged row into its slot (or back home).
+    const target = moved ? this.#restingOffset(s) : 0;
+    s.li.classList.add("sr-settling");
+    s.li.style.transform = `translate3d(0, ${target}px, 0)`;
+    if (!moved) for (const o of s.others) o.li.style.transform = "";
+
+    setTimeout(() => {
+      if (!moved) return reset();
+      const beforeKey = s.others[s.index]?.key ?? null;
+      const lastKey = s.others.at(-1)?.key;
+      this.#apply(s.documentName, model => {
+        const node = model.nodes.get(s.info.key);
+        if (!node) return false;
+        const list = model.listOf(node);
+        const index = beforeKey ? list.indexOf(beforeKey) : list.indexOf(lastKey) + 1;
+        if (index < 0) return false;
+        return model.move(s.info.key, node.parent, index);
+      }).finally(() => {
+        // Usually the sidebar has re-rendered by now; if not, tidy up the old rows.
+        if (s.li.isConnected) reset();
+      });
+    }, 160);
   }
 }
 

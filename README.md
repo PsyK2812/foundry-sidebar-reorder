@@ -7,7 +7,7 @@ A Foundry VTT module (v13–v14) that gives the GM a window for rearranging fold
 Hover any folder or entry (as GM) and you get three controls on the right:
 
 - **▲ / ▼** move it one step within its folder. **Shift-click** sends it to the top / bottom
-- **Grip** (≡): hold and slide up or down; an orange line shows where it will land; Esc cancels
+- **Grip** (≡): hold and slide up or down. The row follows your mouse and the others slide out of the way live; Esc cancels
 - Works at the top level and inside folders, including folders sorted A–Z (they switch to manual order so the move sticks)
 - Each move saves immediately. **Alt+Z** undoes the last one (rebindable under Configure Controls)
 - To move something into a *different* folder, use Foundry's normal drag & drop

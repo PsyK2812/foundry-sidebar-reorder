@@ -136,15 +136,15 @@
 .sr-ctl-grip { cursor: ns-resize; touch-action: none; }
 
 /* While sliding */
-.sr-sliding { position: relative; z-index: 100; opacity: 0.85; pointer-events: none; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.6); }
-.sr-sliding .sr-ctl-grip { pointer-events: auto; }
-#sr-slide-line {
-  display: none;
-  position: fixed;
-  height: 4px;
-  z-index: 10000;
-  pointer-events: none;
-  border-radius: 2px;
-  background: var(--color-warm-1, #ee9b3a);
-  box-shadow: 0 0 4px var(--color-warm-1, #ee9b3a);
+.sr-shift { transition: transform 160ms cubic-bezier(0.2, 0, 0, 1); will-change: transform; }
+.sr-sliding {
+  position: relative;
+  z-index: 100;
+  transition: none;
+  will-change: transform;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.55);
+  cursor: grabbing;
 }
+.sr-sliding.sr-settling { transition: transform 160ms cubic-bezier(0.2, 0, 0, 1), box-shadow 160ms; box-shadow: none; }
+.sr-sliding .sr-ctl { opacity: 1; }
+body:has(.sr-sliding) { cursor: grabbing; user-select: none; }
